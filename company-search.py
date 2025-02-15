@@ -4,6 +4,10 @@ import aiohttp
 from bs4 import BeautifulSoup
 from openai import OpenAI
 from prompts import Prompts
+import pycurl
+import io
+import certifi
+
 client = OpenAI(
     base_url="https://api.aimlapi.com/v1",
 
@@ -13,7 +17,6 @@ client = OpenAI(
 
 TAVILY_API_URL = "https://api.tavily.com/search"
 TAVILY_API_KEY = "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"  # Replace with your real key
-
 
 
 #####################################
@@ -62,32 +65,87 @@ async def fetch_url(session, url):
 
 def extract_text_from_html(html_content):
     """
-    Parses HTML content and extracts just the text.
+    Parses HTML content and extracts only the main 'about' content.
+    This function removes unnecessary elements like scripts, styles,
+    headers, footers, navigation, and sidebars, and then attempts to extract
+    content from a <main> tag or a designated 'about' section.
     """
     soup = BeautifulSoup(html_content, "html.parser")
+
+    # Remove unwanted tags
+    for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
+        tag.decompose()
+
+    # Try to extract content from the <main> tag if present
+    main_content = soup.find("main")
+    if main_content:
+        return main_content.get_text(separator=" ", strip=True)
+
+    # Fallback: Look for a div with an 'about' identifier (either class or id)
+    about_section = soup.find("div", class_="about") or soup.find("div", id="about")
+    if about_section:
+        return about_section.get_text(separator=" ", strip=True)
+
+    # Final fallback: Use the body content
+    if soup.body:
+        return soup.body.get_text(separator=" ", strip=True)
+
+    # If no body tag exists, return all text
     return soup.get_text(separator=" ", strip=True)
 
 
-async def parallel_scrape(urls):
+def parallel_scrape(urls):
     """
-    Given a list of URLs, fetch them all asynchronously and return extracted text for each.
+    Given a list of URLs, fetch them all concurrently using pycurl's multi interface,
+    extract the relevant text from each HTML page, and return the texts.
     """
-    # Use a semaphore to limit concurrent requests if needed (e.g., 5 at a time)
-    # sem = asyncio.Semaphore(5)
+    multi = pycurl.CurlMulti()
+    curl_handles = []
+    buffers = []
+
+    # Setup individual Curl handles for each URL
+    for url in urls:
+        buf = io.BytesIO()
+        c = pycurl.Curl()
+        c.setopt(pycurl.URL, url)
+        c.setopt(pycurl.WRITEDATA, buf)
+        c.setopt(pycurl.FOLLOWLOCATION, True)
+        c.setopt(pycurl.TIMEOUT, 10)  # optional timeout
+        c.setopt(pycurl.CAINFO, certifi.where())
+        multi.add_handle(c)
+        curl_handles.append(c)
+        buffers.append(buf)
+
+    # Execute all requests concurrently
+    num_active = 1
+    while num_active:
+        ret, num_active = multi.perform()
+        if ret != pycurl.E_CALL_MULTI_PERFORM:
+            break
+
+    # Wait for all transfers to complete
+    while num_active:
+        multi.select(1.0)
+        while True:
+            ret, num_active = multi.perform()
+            if ret != pycurl.E_CALL_MULTI_PERFORM:
+                break
+
     texts = []
-
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        for url in urls:
-            tasks.append(fetch_url(session, url))
-
-        html_pages = await asyncio.gather(*tasks)
-
-    # Extract text from each HTML page
-    for html in html_pages:
+    # Process each handle's result
+    for c, buf in zip(curl_handles, buffers):
+        try:
+            html = buf.getvalue().decode('utf-8', errors='ignore')
+        except Exception as e:
+            print("Error decoding response:", e)
+            html = ""
+        # Use your extraction function to get the desired text
         text = extract_text_from_html(html)
         texts.append(text)
+        multi.remove_handle(c)
+        c.close()
 
+    multi.close()
     return texts
 
 
@@ -102,7 +160,7 @@ def ai_agent_process(text_blocks):
     """
     combined_text = "\n\n".join(text_blocks)
     response = client.chat.completions.create(
-        model="deepseek-ai/deepseek-llm-67b-chat",
+        model="deepseek-chat",
         messages=[
             {
                 "role": "system",
@@ -129,7 +187,7 @@ def main(company_name):
     print(f"Found {len(urls)} URLs for '{company_name}'")
 
     # 2. Scrape URLs in parallel
-    text_blocks = asyncio.run(parallel_scrape(urls))
+    text_blocks = parallel_scrape(urls)
 
     # 3. Send data to AI agent for further processing/analysis
     results = ai_agent_process(text_blocks)
