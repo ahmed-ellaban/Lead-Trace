@@ -1,4 +1,4 @@
-class Prompt:
+class Prompts:
     system_prompt = """
     You are an advanced data extraction AI. The user will provide raw text from various web pages. Using the instructions below, your job is to parse that text and extract the requested information in strictly valid JSON format.
 
@@ -99,7 +99,6 @@ If any detail remains unavailable, set it to `null`, `""`, or `[]`.
 
 ### Strict JSON Format for the Final Output
 
-```json
 {
   "company": "",
   "logo": "",
@@ -167,4 +166,12 @@ If any detail remains unavailable, set it to `null`, `""`, or `[]`.
 }
 Final Instructions: Return only this JSON object with no extra text. Discard any 404 or invalid links and find a working alternative instead. If any detail is unavailable, set it to null, "", or [].
     
+    """
+
+    user_prompt = """
+    Here is the combined text from all the websites we’ve gathered:
+    ```
+    {extracted_text}
+    ```
+    Using the system instructions, please extract all the requested data in strictly valid JSON format. Remember to verify the links for 404 or errors.
     """
