@@ -2,9 +2,18 @@ import requests
 import asyncio
 import aiohttp
 from bs4 import BeautifulSoup
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.aimlapi.com/v1",
+
+    # Insert your AIML API Key in the quotation marks instead of <YOUR_API_KEY>.
+    api_key="18a850ef1cb44787933fc6e1260fa48e",
+)
 
 TAVILY_API_URL = "https://api.tavily.com/search"
 TAVILY_API_KEY = "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"  # Replace with your real key
+
 
 def get_prompt(company_name):
     prompt = f"""
@@ -176,6 +185,7 @@ def get_prompt(company_name):
         If any detail is unavailable, set it to null, "", or []. """
     return prompt
 
+
 #####################################
 # 1. SEARCH AGENT
 #####################################
@@ -261,12 +271,23 @@ def ai_agent_process(text_blocks):
     Here, we'll just combine them into one string as a placeholder.
     """
     combined_text = "\n\n".join(text_blocks)
+    response = client.chat.completions.create(
+        model="deepseek-ai/deepseek-llm-67b-chat",
+        messages=[
+            {
+                "role": "system",
+                "content": "You are an AI assistant who knows everything.",
+            },
+            {
+                "role": "user",
+                "content": "Tell me, why is the sky blue?"
+            },
+        ],
+    )
 
-    # Example: You might call an AI endpoint here:
-    # response = openai_api_call(combined_text)
-    # Or you could do local NLP processing.
-    # We'll just return combined_text as a placeholder.
-    return combined_text
+    result = response.choices[0].message.content
+
+    return result
 
 
 #####################################
