@@ -161,6 +161,8 @@ def ai_agent_process(text_blocks):
     combined_text = "\n\n".join(text_blocks)
     response = client.chat.completions.create(
         model="deepseek-chat",
+        max_completion_tokens=4000,
+        max_tokens=4000,
         messages=[
             {
                 "role": "system",
