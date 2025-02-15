@@ -5,7 +5,7 @@ client = OpenAI(
     base_url="https://api.aimlapi.com/v1",
 
     # Insert your AIML API Key in the quotation marks instead of <YOUR_API_KEY>.
-    api_key="<YOUR_API_KEY>",
+    api_key="18a850ef1cb44787933fc6e1260fa48e",
 )
 
 response = client.chat.completions.create(
