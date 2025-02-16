@@ -54,7 +54,7 @@ def search_company(company_name, max_results=20):
         "Authorization": f"Bearer {TAVILY_API_KEY}"
     }
     payload = {
-        "query": company_name,
+        "query": company_name + "Company info",
         "include_answer": "advanced",
         "max_results": max_results
     }
@@ -227,45 +227,44 @@ def main(company_name):
         url = r.get("url", "")
         parsed = urlparse(url)
         domain = parsed.netloc.lower()
-        # Quick check to see if domain is in banned list
-        # (We might check just the "root domain" part if needed)
+
+        # Mark if the domain is banned
         if any(bd in domain for bd in BANNED_DOMAINS):
-            # We'll keep the search content but skip scraping
             r["skip_scraping"] = True
         else:
             r["skip_scraping"] = False
 
         filtered_results.append(r)
 
-    # 3. Build a list of only the URLs we are allowed to scrape
-    #    We keep them in the same order so we can align them with results
-    scrape_pairs = []  # Will store (index, url)
+    # 3. Collect URLs for scraping (only first 10 allowed URLs)
+    scrape_pairs = []
+    allowed_count = 0
     for i, fr in enumerate(filtered_results):
-        if not fr["skip_scraping"] and fr.get("url"):
+        if not fr["skip_scraping"] and fr.get("url") and allowed_count < 10:
             scrape_pairs.append((i, fr["url"]))
+            allowed_count += 1
+
+    print(f"Scraping {len(scrape_pairs)} URLs out of {len(filtered_results)} results (limited to 10).")
 
     # 4. Scrape in parallel (only allowed URLs)
     scrape_urls = [p[1] for p in scrape_pairs]
     scraped_texts = parallel_scrape(scrape_urls)
 
-    # 5. Put the scraped text back into the correct search result
-    #    based on original index
+    # 5. Reassign scraped content to filtered results
     for (i, _), st in zip(scrape_pairs, scraped_texts):
         filtered_results[i]["extracted_content"] = st
 
-    # 6. Build the final "formatted" text
-    # Include the Tavily 'answer'
+    # 6. Build the final output text
     formatted_output = [f"[TAVILY ANSWER]\n{answer_text}\n\n"]
-
     for idx, r in enumerate(filtered_results, start=1):
         url = r.get("url", "")
         search_content = r.get("content", "(No snippet content)")
         extracted_content = r.get("extracted_content", "(No page content)")
-        # If skip_scraping is True, we also note it
         skip_flag = "[SKIPPED]" if r.get("skip_scraping") else ""
+        limited_flag = "[NOT SCRAPED - LIMIT REACHED]" if not r.get("skip_scraping") and "extracted_content" not in r else ""
 
         section = (
-            f"---- PAGE {idx} {skip_flag} ----\n"
+            f"---- PAGE {idx} {skip_flag} {limited_flag} ----\n"
             f"URL: {url}\n\n"
             f"Search Content:\n{search_content}\n\n"
             f"Extracted Content:\n{extracted_content}\n\n"
@@ -273,12 +272,13 @@ def main(company_name):
         formatted_output.append(section)
 
     final_text = "".join(formatted_output)
-    print(len(final_text))
+
+    # Cleanup formatting
     final_text = final_text.replace('*', '').replace('#', '').replace('(', '').replace(')', '').replace('[', '').replace(']', '').replace('\n\n', '\n').replace('   ', '  ')
-    print(len(final_text))
 
-    # 7. Send everything to the AI Agent
+    print(f"Final text length (chars): {len(final_text)}")
 
+    # 7. Send to AI Agent
     result = ai_agent_process(final_text)
     result = json.loads(result.replace('```','').replace('json',''))
     overall_elapsed = time.time() - overall_start
@@ -287,7 +287,7 @@ def main(company_name):
     return result
 
 if __name__ == "__main__":
-    company_name = "الزوزة للتجارة والتوزيع Company info"  # or AppsFlyer Aqua Security Armis At-Bay Augury Axonius BigID BigPanda
+    company_name = "Axonius"  # or AppsFlyer Aqua Security Armis At-Bay Augury Axonius BigID BigPanda
     result = main(company_name)
     print("----- AI Agent Output -----")
     print(result)

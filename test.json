@@ -1,0 +1,103 @@
+{
+  'company': 'BigPanda Inc.',
+  'logo': 'https://www.bigpanda.io/wp-content/uploads/2020/05/footer-panda.svg',
+  'alternative_names': [],
+  'description': 'BigPanda is a software development company specializing in IT operations, offering an autonomous operations platform that uses artificial intelligence and machine learning to detect, investigate, and resolve IT incidents. The platform consolidates alerts from multiple monitoring tools, analyzes incidents, identifies patterns, and predicts potential issues before they escalate.',
+  'foundation_story': 'BigPanda was founded in 2012 with $1.5 million in initial funding. The company came out of stealth mode in 2014, took its software-as-a-service product out of beta, and announced $7 million in Series A funding. It has since raised multiple rounds of funding, including a Series E in August 2022, bringing its total capital to $340 million and achieving a valuation of $1.2 billion.',
+  'industry': 'Software Development, IT Operations, AIOps',
+  'founded_year': '2012',
+  'headquarters': 'Redwood City, California, United States',
+  'business_type': 'Private',
+  'company_size': '330 employees (as of 2024)',
+  'revenue': '$30.2 million (2021)',
+  'stock_ticker': None,
+  'ipo_date': None,
+  'website': 'https://www.bigpanda.io',
+  'social_media': {
+    'linkedin': 'https://www.linkedin.com/company/bigpanda',
+    'twitter': 'https://twitter.com/bigpanda',
+    'facebook': 'https://www.facebook.com/bigpandaio',
+    'instagram': 'https://www.instagram.com/bigpanda.io',
+    'youtube': 'https://www.youtube.com/channel/UC3QwdJJ2lRtKwFewpfOi-bw',
+    'tiktok': '',
+    'github': ''
+  },
+  'contact_details': {
+    'emails': {
+      'general': 'info@bigpanda.io',
+      'support': '',
+      'sales': '',
+      'hr': ''
+    },
+    'phone_numbers': [
+      '+1 650-562-6555'
+    ],
+    'fax': '',
+    'whatsapp': '',
+    'live_chat': '',
+    'press_contact': 'https://www.bigpanda.io/company/newsroom/'
+  },
+  'leadership': {
+    'ceo': {
+      'full_name': 'Assaf Resnick',
+      'linkedin': 'https://www.linkedin.com/in/assafresnick',
+      'email': '',
+      'phone_numbers': []
+    },
+    'founders': [
+      {
+        'full_name': 'Assaf Resnick',
+        'linkedin': 'https://www.linkedin.com/in/assafresnick'
+      },
+      {
+        'full_name': 'Elik Eizenberg',
+        'linkedin': ''
+      }
+    ],
+    'board_members': []
+  },
+  'business_info': {
+    'registration_number': '',
+    'parent_company': '',
+    'subsidiaries': [],
+    'competitors': [
+      'Dynatrace',
+      'Moogsoft',
+      'PagerDuty',
+      'Virtana Cloud Cost Management'
+    ],
+    'partnerships': [
+      'ServiceNow',
+      'Verinext'
+    ]
+  },
+  'milestones_awards': [
+    '2024 AI Breakthrough Awards: Best AIOps Company',
+    '2024 SaaS Awards: IT Management + Operations Winner',
+    '2024 SIIA CODiE Awards: Best IT Management Solution'
+  ],
+  'careers': {
+    'job_openings_url': 'https://www.bigpanda.io/company/panda-way/jobs/',
+    'business_hours': ''
+  },
+  'news': {
+    'recent_press_releases': [
+      'BigPanda Raises $190 Million in Funding at $1.2 Billion Valuation (Jan 12, 2022)',
+      'BigPanda Generative AI Revolutionizes Incident Management (July 11, 2023)',
+      'BigPanda Launches New Data Engineering Capabilities (Feb 15, 2023)'
+    ],
+    'media_kit_url': 'https://www.bigpanda.io/company/newsroom/'
+  },
+  'sources': [
+    'https://www.bigpanda.io',
+    'https://www.crunchbase.com/organization/bigpanda',
+    'https://www.zoominfo.com/c/bigpanda/372896875',
+    'https://craft.co/bigpanda',
+    'https://pitchbook.com/profiles/company/60895-27',
+    'https://xipometer.com/en/company/bigpanda',
+    'https://en.wikipedia.org/wiki/BigPanda',
+    'https://www.bigpanda.io/contact-us/',
+    'https://www.bigpanda.io/company/leadership/',
+    'https://www.bigpanda.io/company/newsroom/'
+  ]
+}
