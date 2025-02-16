@@ -176,7 +176,8 @@ def ai_agent_process(formatted_text):
 
     # Make the API call
     response = client.chat.completions.create(
-        model="deepseek-chat",
+        # model="deepseek-chat",
+        model="gpt-4o",
         max_completion_tokens=4000,
         max_tokens=4000,
         messages=[
@@ -236,7 +237,7 @@ def main(company_name):
 
         filtered_results.append(r)
 
-    # 3. Collect URLs for scraping (only first 10 allowed URLs)
+    # 3. Collect URLs for scraping (only first 5 allowed URLs)
     scrape_pairs = []
     allowed_count = 0
     for i, fr in enumerate(filtered_results):
