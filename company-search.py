@@ -1,3 +1,6 @@
+# encoding: utf-8
+
+import json
 import time
 import requests
 import pycurl
@@ -7,6 +10,7 @@ from bs4 import BeautifulSoup
 from html2text import HTML2Text
 from openai import OpenAI
 from prompts import Prompts
+from urllib.parse import urlparse
 
 # Configure html2text
 html2text = HTML2Text()
@@ -16,12 +20,24 @@ html2text.body_width = 0  # Disable text wrapping
 
 client = OpenAI(
     base_url="https://api.aimlapi.com/v1",
-    # Insert your AIML API Key.
     api_key="18a850ef1cb44787933fc6e1260fa48e",
 )
 
 TAVILY_API_URL = "https://api.tavily.com/search"
-TAVILY_API_KEY = "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"  # Replace with your real key
+TAVILY_API_KEY = "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"
+
+# List of domains you do not want to scrape
+BANNED_DOMAINS = {
+    "facebook.com",
+    "twitter.com",
+    "instagram.com",
+    "linkedin.com",
+    "youtube.com",
+    "tiktok.com",
+    "github.com",
+    "crunchbase",
+    "zoominfo"
+}
 
 ###################################
 # 1. SEARCH AGENT
@@ -32,6 +48,7 @@ def search_company(company_name, max_results=20):
     Returns the entire search response (JSON), including 'answer' & 'results'.
     """
     start_time = time.time()
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {TAVILY_API_KEY}"
@@ -68,12 +85,6 @@ def extract_text_from_html(html_content):
     cleaned_html = str(body)
     markdown_text = html2text.handle(cleaned_html)
     return markdown_text
-banned_domains = ("linkedin.com", "facebook.com", "twitter.com", "instagram.com", "youtube.com", "github.com", "tiktok.com", "crunchbase", "zoominfo")
-def url_filter(url):
-    for domain in banned_domains:
-        if domain in url:
-            return True
-    return False
 
 def parallel_scrape(urls):
     """
@@ -124,7 +135,7 @@ def parallel_scrape(urls):
                 break
 
     # Process results
-    scraped_texts = {}
+    scraped_texts = []
     for c, buf in zip(curl_handles, buffers):
         try:
             html = buf.getvalue().decode("utf-8", errors="ignore")
@@ -133,7 +144,7 @@ def parallel_scrape(urls):
             html = ""
 
         text = extract_text_from_html(html)[:10000]  # Limit to 10000 chars
-        scraped_texts[url] = text
+        scraped_texts.append(text)
         multi.remove_handle(c)
         c.close()
 
@@ -148,36 +159,55 @@ def parallel_scrape(urls):
 ###################################
 def ai_agent_process(formatted_text):
     """
-    Send the formatted text to the AI with a system prompt or instructions.
+    Sends the formatted text to the AI with system prompt.
+    Prints usage, tokens, and cost.
     """
-    # We time the AI call
     start_time = time.time()
 
     # If content is extremely large, you might want to truncate or summarize
     max_length = 500_000  # 500k chars
     if len(formatted_text) > max_length:
-        print(f"[WARNING] Content is {len(formatted_text)} chars, exceeding {max_length} limit.")
-        print("[INFO] Truncating to first 500k characters to fit in the request.")
+        print(f"[WARNING] Content is {len(formatted_text)} chars, exceeding {max_length}.")
+        print("[INFO] Truncating to first 500k characters.")
         formatted_text = formatted_text[:max_length]
 
-    system_prompt = """You are a research assistant. 
-    The user is providing a collection of text about a company from multiple sources. 
-    Please read through the content carefully and summarize key details accurately.
-    """
+    # We'll use your system prompt from the prompts module if you prefer
+    system_prompt = Prompts.system_prompt
 
+    # Make the API call
     response = client.chat.completions.create(
         model="deepseek-chat",
         max_completion_tokens=4000,
         max_tokens=4000,
         messages=[
-            {"role": "system", "content": Prompts.system_prompt},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": formatted_text}
         ]
     )
 
+    # Calculate timing
     elapsed = time.time() - start_time
     print(f"[TIMING] AI agent processing took {elapsed:.2f} seconds.")
 
+    # Get token usage from the response
+    usage = response.usage
+    prompt_tokens = usage.prompt_tokens
+    completion_tokens = usage.completion_tokens
+    total_tokens = usage.total_tokens, prompt_tokens + completion_tokens
+
+    # Cost calculations
+    # $0.0001544 per 1K prompt tokens
+    # $0.0003087 per 1K completion tokens
+    # $0.0004631 per call
+    cost_per_call = 0.0004631
+    cost_prompt = 0.0001544 * (prompt_tokens / 1000.0)
+    cost_completion = 0.0003087 * (completion_tokens / 1000.0)
+    total_cost = cost_per_call + cost_prompt + cost_completion
+
+    print(f"[TOKENS] Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {total_tokens}")
+    print(f"[COST] = ${total_cost:.6f} (call: {cost_per_call}, prompt: {cost_prompt:.6f}, completion: {cost_completion:.6f})")
+
+    # Return the final text
     return response.choices[0].message.content
 
 ###################################
@@ -186,33 +216,56 @@ def ai_agent_process(formatted_text):
 def main(company_name):
     overall_start = time.time()
 
-    # 1. Get data from Tavily search
+    # 1. Retrieve search data from Tavily
     search_data = search_company(company_name)
-
-    # 2. Extract the short answer + results from the Tavily response
     answer_text = search_data.get("answer", "(No answer provided)")
     results = search_data.get("results", [])
 
-    # 3. Collect URLs from the search results
-    urls = [r["url"] for r in results if r.get("url") and not url_filter(r["url"])]
-    print(f"[INFO] Found {len(urls)} URLs for '{company_name}'")
+    # 2. Filter out unwanted (banned) domains
+    filtered_results = []
+    for r in results:
+        url = r.get("url", "")
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+        # Quick check to see if domain is in banned list
+        # (We might check just the "root domain" part if needed)
+        if any(bd in domain for bd in BANNED_DOMAINS):
+            # We'll keep the search content but skip scraping
+            r["skip_scraping"] = True
+        else:
+            r["skip_scraping"] = False
 
-    # 4. Scrape those URLs in parallel
-    scraped_texts = parallel_scrape(urls)
+        filtered_results.append(r)
 
-    # 5. Build the final "formatted" text
+    # 3. Build a list of only the URLs we are allowed to scrape
+    #    We keep them in the same order so we can align them with results
+    scrape_pairs = []  # Will store (index, url)
+    for i, fr in enumerate(filtered_results):
+        if not fr["skip_scraping"] and fr.get("url"):
+            scrape_pairs.append((i, fr["url"]))
+
+    # 4. Scrape in parallel (only allowed URLs)
+    scrape_urls = [p[1] for p in scrape_pairs]
+    scraped_texts = parallel_scrape(scrape_urls)
+
+    # 5. Put the scraped text back into the correct search result
+    #    based on original index
+    for (i, _), st in zip(scrape_pairs, scraped_texts):
+        filtered_results[i]["extracted_content"] = st
+
+    # 6. Build the final "formatted" text
+    # Include the Tavily 'answer'
     formatted_output = [f"[TAVILY ANSWER]\n{answer_text}\n\n"]
 
-    for i, r in enumerate(results):
-        page_num = i + 1
+    for idx, r in enumerate(filtered_results, start=1):
         url = r.get("url", "")
-
         search_content = r.get("content", "(No snippet content)")
-        # If we have fewer scraped texts than results, handle gracefully
-        extracted_content = scraped_texts[i] if i < len(scraped_texts) else "(No page content)"
+        extracted_content = r.get("extracted_content", "(No page content)")
+        # If skip_scraping is True, we also note it
+        skip_flag = "[SKIPPED]" if r.get("skip_scraping") else ""
 
         section = (
-            f"---- PAGE {page_num} ----\n"
+            f"---- PAGE {idx} {skip_flag} ----\n"
             f"URL: {url}\n\n"
             f"Search Content:\n{search_content}\n\n"
             f"Extracted Content:\n{extracted_content}\n\n"
@@ -220,17 +273,21 @@ def main(company_name):
         formatted_output.append(section)
 
     final_text = "".join(formatted_output)
+    print(len(final_text))
+    final_text = final_text.replace('*', '').replace('#', '').replace('(', '').replace(')', '').replace('[', '').replace(']', '').replace('\n\n', '\n').replace('   ', '  ')
+    print(len(final_text))
 
-    # 6. Send it to the AI Agent for further processing
+    # 7. Send everything to the AI Agent
+
     result = ai_agent_process(final_text)
-
+    result = json.loads(result.replace('```','').replace('json',''))
     overall_elapsed = time.time() - overall_start
     print(f"[TIMING] TOTAL processing time: {overall_elapsed:.2f} seconds.")
 
     return result
 
 if __name__ == "__main__":
-    company_name = "BigPanda Company info"  # or AppsFlyer Aqua Security Armis At-Bay Augury Axonius BigID BigPanda
+    company_name = "الزوزة للتجارة والتوزيع Company info"  # or AppsFlyer Aqua Security Armis At-Bay Augury Axonius BigID BigPanda
     result = main(company_name)
     print("----- AI Agent Output -----")
     print(result)
