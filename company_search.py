@@ -19,14 +19,15 @@ html2text.ignore_images = False
 html2text.body_width = 0  # Disable text wrapping
 
 client = OpenAI(
-    base_url="https://api.aimlapi.com/v1",
-    api_key="18a850ef1cb44787933fc6e1260fa48e",
+    base_url="https://api.deepseek.com",
+    api_key="sk-931953d29d5947f28369b837910669d4",  # Example key; replace with real
 )
 
-TAVILY_API_URL = "https://api.tavily.com/search"
-TAVILY_API_KEY = "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"
+bing_search = (
+    "https://shtyqkcm5jvmc37bwo45yqx43i0qnbwz.lambda-url.us-east-2.on.aws/bing"
+)
 
-# List of domains you do not want to scrape
+# Domains to skip scraping
 BANNED_DOMAINS = {
     "facebook.com",
     "twitter.com",
@@ -36,7 +37,7 @@ BANNED_DOMAINS = {
     "tiktok.com",
     "github.com",
     "crunchbase",
-    "zoominfo"
+    "zoominfo",
 }
 
 ###################################
@@ -44,27 +45,25 @@ BANNED_DOMAINS = {
 ###################################
 def search_company(company_name, max_results=20):
     """
-    Sends a POST request to the Tavily Search API with a given company name.
-    Returns the entire search response (JSON), including 'answer' & 'results'.
+    Sends a POST request to the Bing Search API with a given company name.
+    Returns the entire search response (JSON), including new fields:
+      - search_results.answer_block
+      - search_results.sidebar
+      - search_results.results
+      - search_results.questions_answers
     """
     start_time = time.time()
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {TAVILY_API_KEY}"
-    }
     payload = {
-        "query": company_name + "Company info",
-        "include_answer": "advanced",
-        "max_results": max_results
+        "query": f"{company_name} Company info",
     }
 
-    response = requests.post(TAVILY_API_URL, headers=headers, json=payload)
+    response = requests.get(bing_search, params=payload)
     response.raise_for_status()
     data = response.json()
 
     elapsed = time.time() - start_time
-    print(f"[TIMING] Tavily search completed in {elapsed:.2f} seconds.")
+    print(f"[TIMING] Bing Search API completed in {elapsed:.2f} seconds.")
     return data
 
 ###################################
@@ -73,12 +72,12 @@ def search_company(company_name, max_results=20):
 def extract_text_from_html(html_content):
     """
     Extracts text from the <body> tag (removing scripts, styles, etc.),
-    then converts the cleaned HTML to markdown using html2text.
+    then converts cleaned HTML to markdown using html2text.
     """
     soup = BeautifulSoup(html_content, "html.parser")
     body = soup.body if soup.body else soup  # Fallback to entire doc if no body tag
 
-    # Remove unnecessary tags inside the body
+    # Remove unnecessary tags for cleanliness
     for tag in body.find_all(["script", "style", "nav", "header", "footer", "aside"]):
         tag.decompose()
 
@@ -88,8 +87,8 @@ def extract_text_from_html(html_content):
 
 def parallel_scrape(urls):
     """
-    Given a list of URLs, fetch them all concurrently using pycurl's multi interface,
-    extract relevant text from each HTML page, and return a list of page texts.
+    Concurrently fetches a list of URLs using pycurl's multi interface,
+    extracts relevant text, and returns a list of extracted texts.
     """
     if not urls:
         return []
@@ -108,7 +107,7 @@ def parallel_scrape(urls):
         c.setopt(pycurl.FOLLOWLOCATION, True)
         c.setopt(pycurl.TIMEOUT, 10)  # optional timeout
         c.setopt(pycurl.CAINFO, certifi.where())
-        # Optionally set human-like headers
+        # Human-like headers
         c.setopt(pycurl.HTTPHEADER, [
             "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -143,8 +142,10 @@ def parallel_scrape(urls):
             print(f"Error decoding response: {e}")
             html = ""
 
-        text = extract_text_from_html(html)[:10000]  # Limit to 10000 chars
+        # Limit text length if needed
+        text = extract_text_from_html(html)[:50000]
         scraped_texts.append(text)
+
         multi.remove_handle(c)
         c.close()
 
@@ -157,58 +158,47 @@ def parallel_scrape(urls):
 ###################################
 # 3. AI AGENT
 ###################################
-def ai_agent_process(formatted_text):
+def ai_agent_process(final_text):
     """
-    Sends the formatted text to the AI with system prompt.
-    Prints usage, tokens, and cost.
+    Sends final_text to the AI with system prompt, prints token usage & cost.
     """
     start_time = time.time()
 
-    # If content is extremely large, you might want to truncate or summarize
-    max_length = 500_000  # 500k chars
-    if len(formatted_text) > max_length:
-        print(f"[WARNING] Content is {len(formatted_text)} chars, exceeding {max_length}.")
-        print("[INFO] Truncating to first 500k characters.")
-        formatted_text = formatted_text[:max_length]
+    # Truncation if extremely large
+    max_length = 500_000
+    if len(final_text) > max_length:
+        print(f"[WARNING] Content is {len(final_text)} chars (exceeds {max_length}). Truncating.")
+        final_text = final_text[:max_length]
 
-    # We'll use your system prompt from the prompts module if you prefer
-    system_prompt = Prompts.system_prompt
+    system_prompt = Prompts.system_prompt  # from your prompts.py
 
-    # Make the API call
     response = client.chat.completions.create(
-        # model="deepseek-chat",
-        model="gpt-4o",
+        model="deepseek-chat",
         max_completion_tokens=4000,
         max_tokens=4000,
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": formatted_text}
+            {"role": "user", "content": final_text}
         ]
     )
 
-    # Calculate timing
     elapsed = time.time() - start_time
     print(f"[TIMING] AI agent processing took {elapsed:.2f} seconds.")
 
-    # Get token usage from the response
+    # Token usage & cost
     usage = response.usage
     prompt_tokens = usage.prompt_tokens
     completion_tokens = usage.completion_tokens
-    total_tokens = usage.total_tokens, prompt_tokens + completion_tokens
+    total_tokens = usage.total_tokens
 
-    # Cost calculations
-    # $0.0001544 per 1K prompt tokens
-    # $0.0003087 per 1K completion tokens
-    # $0.0004631 per call
-    cost_per_call = 0.0004631
-    cost_prompt = 0.0001544 * (prompt_tokens / 1000.0)
-    cost_completion = 0.0003087 * (completion_tokens / 1000.0)
+    cost_per_call = 0
+    cost_prompt = 0.27* (prompt_tokens / 1000_0000)
+    cost_completion = 1.10 * (completion_tokens / 1000_0000)
     total_cost = cost_per_call + cost_prompt + cost_completion
 
     print(f"[TOKENS] Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {total_tokens}")
     print(f"[COST] = ${total_cost:.6f} (call: {cost_per_call}, prompt: {cost_prompt:.6f}, completion: {cost_completion:.6f})")
 
-    # Return the final text
     return response.choices[0].message.content
 
 ###################################
@@ -217,78 +207,124 @@ def ai_agent_process(formatted_text):
 def main(company_name):
     overall_start = time.time()
 
-    # 1. Retrieve search data from Tavily
-    search_data = search_company(company_name)
-    answer_text = search_data.get("answer", "(No answer provided)")
-    results = search_data.get("results", [])
+    # 1. Retrieve Bing data
+    data = search_company(company_name)
+    search_res = data.get("search_results", {})
 
-    # 2. Filter out unwanted (banned) domains
+    # Extract new Bing fields
+    answer_block = search_res.get("answer_block", "")
+    sidebar = search_res.get("sidebar", "")
+    raw_results = search_res.get("results", [])
+    questions_answers = search_res.get("questions_answers", [])
+
+    # 2. Filter out banned domains from raw_results
     filtered_results = []
-    for r in results:
-        url = r.get("url", "")
-        parsed = urlparse(url)
+    for r in raw_results:
+        link = r.get("link", "")
+        parsed = urlparse(link)
         domain = parsed.netloc.lower()
-
-        # Mark if the domain is banned
-        if any(bd in domain for bd in BANNED_DOMAINS):
-            r["skip_scraping"] = True
-        else:
-            r["skip_scraping"] = False
-
+        r["skip_scraping"] = any(bd in domain for bd in BANNED_DOMAINS)
         filtered_results.append(r)
 
-    # 3. Collect URLs for scraping (only first 5 allowed URLs)
+    # 3. Build a list of up to 20 allowed URLs
     scrape_pairs = []
     allowed_count = 0
     for i, fr in enumerate(filtered_results):
-        if not fr["skip_scraping"] and fr.get("url") and allowed_count < 10:
-            scrape_pairs.append((i, fr["url"]))
+        if not fr["skip_scraping"] and fr.get("link") and allowed_count < 20:
+            scrape_pairs.append((i, fr["link"]))
             allowed_count += 1
 
-    print(f"Scraping {len(scrape_pairs)} URLs out of {len(filtered_results)} results (limited to 10).")
+    print(f"Scraping {len(scrape_pairs)} URLs out of {len(filtered_results)} results (limit 20).")
 
-    # 4. Scrape in parallel (only allowed URLs)
+    # 4. Scrape in parallel
     scrape_urls = [p[1] for p in scrape_pairs]
     scraped_texts = parallel_scrape(scrape_urls)
 
-    # 5. Reassign scraped content to filtered results
+    # 5. Assign scraped content back to the correct result
     for (i, _), st in zip(scrape_pairs, scraped_texts):
         filtered_results[i]["extracted_content"] = st
 
-    # 6. Build the final output text
-    formatted_output = [f"[TAVILY ANSWER]\n{answer_text}\n\n"]
-    for idx, r in enumerate(filtered_results, start=1):
-        url = r.get("url", "")
-        search_content = r.get("content", "(No snippet content)")
-        extracted_content = r.get("extracted_content", "(No page content)")
-        skip_flag = "[SKIPPED]" if r.get("skip_scraping") else ""
-        limited_flag = "[NOT SCRAPED - LIMIT REACHED]" if not r.get("skip_scraping") and "extracted_content" not in r else ""
+    # 6. Build final text to send to AI
+    final_output_parts = []
+
+    # 6a. Add top-level answer_block & sidebar
+    final_output_parts.append(f"--- Bing Answer Block ---\n{answer_block}\n")
+    final_output_parts.append(f"--- Bing Sidebar ---\n{sidebar}\n")
+
+    # 6b. Show the normal search results
+    for idx, fr in enumerate(filtered_results, start=1):
+        link = fr.get("link", "")
+        title = fr.get("title", "(No Title)")
+        snippet = fr.get("snippet", "(No snippet)")
+        date_str = fr.get("date", "")
+        skip_flag = "[SKIPPED]" if fr.get("skip_scraping") else ""
+        content = fr.get("extracted_content", "(No page content)")
 
         section = (
-            f"---- PAGE {idx} {skip_flag} {limited_flag} ----\n"
-            f"URL: {url}\n\n"
-            f"Search Content:\n{search_content}\n\n"
-            f"Extracted Content:\n{extracted_content}\n\n"
+            f"---- Result #{idx} {skip_flag} ----\n"
+            f"Title: {title}\n"
+            f"Link: {link}\n"
+            f"Date: {date_str}\n"
+            f"Snippet:\n{snippet}\n\n"
+            f"Extracted Content:\n{content}\n\n"
         )
-        formatted_output.append(section)
+        final_output_parts.append(section)
 
-    final_text = "".join(formatted_output)
+    # 6c. Include Q&A data if any
+    if questions_answers:
+        final_output_parts.append("--- Bing Questions & Answers ---\n")
+        for q_idx, qa in enumerate(questions_answers, start=1):
+            q_title = qa.get("question_title", "")
+            ans = qa.get("answer", "")
+            src = qa.get("source", "")
+            src_url = qa.get("source_url", "")
+
+            q_section = (
+                f"Q&A #{q_idx}\n"
+                f"Question Title: {q_title}\n"
+                f"Answer:\n{ans}\n"
+                f"Source: {src}\n"
+                f"Source URL: {src_url}\n\n"
+            )
+            final_output_parts.append(q_section)
+
+    # Combine everything
+    final_text = "\n".join(final_output_parts)
 
     # Cleanup formatting
-    final_text = final_text.replace('*', '').replace('#', '').replace('(', '').replace(')', '').replace('[', '').replace(']', '').replace('\n\n', '\n').replace('   ', '  ')
+    # (Remove unwanted chars, extra whitespace, etc. as needed)
+    final_text = (
+        final_text.replace('*', '')
+                   .replace('#', '')
+                   .replace('(', '')
+                   .replace(')', '')
+                   .replace('[', '')
+                   .replace(']', '')
+    )
 
     print(f"Final text length (chars): {len(final_text)}")
 
     # 7. Send to AI Agent
-    result = ai_agent_process(final_text)
-    result = json.loads(result.replace('```','').replace('json',''))
+    ai_response = ai_agent_process(final_text)
+
+    # 8. Convert response from JSON (if the AI's answer is JSON)
+    #    Otherwise, handle strings or partial JSON as needed
+    try:
+        result_data = json.loads(ai_response.replace('```','').replace('json',''))
+    except json.JSONDecodeError:
+        print("[WARNING] AI response did not parse as JSON. Returning raw text.")
+        result_data = {"ai_response_raw": ai_response}
+
     overall_elapsed = time.time() - overall_start
     print(f"[TIMING] TOTAL processing time: {overall_elapsed:.2f} seconds.")
-
-    return result
+    result_data['time_used'] = overall_elapsed
+    return result_data
 
 if __name__ == "__main__":
-    company_name = "Axonius"  # or AppsFlyer Aqua Security Armis At-Bay Augury Axonius BigID BigPanda
-    result = main(company_name)
+    company_name = "upwork"  # Example
+    output = main(company_name)
     print("----- AI Agent Output -----")
-    print(result)
+    print(output)
+    # save output to json file
+    with open(f"{company_name}.json", "w") as f:
+        json.dump(output, f, indent=4)
